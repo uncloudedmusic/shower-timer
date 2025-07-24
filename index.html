@@ -43,14 +43,17 @@
     button:hover {
       background-color: var(--btn-hover);
     }
-    input[type="number"] {
+    input[type="number"], select {
       padding: 0.5rem;
       font-size: 1rem;
-      width: 5rem;
+      margin: 0.5rem;
     }
     #results {
       font-size: 1.2rem;
       margin-top: 1rem;
+    }
+    #adjustments {
+      margin-top: 2rem;
     }
     #darkToggle {
       position: absolute;
@@ -59,18 +62,41 @@
       font-size: 0.9rem;
       padding: 0.5rem 1rem;
     }
+    .warmup-note {
+      font-size: 0.9rem;
+      color: #888;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
   </style>
 </head>
 <body>
   <button id="darkToggle">Toggle Dark Mode</button>
   <h1>Shower Timer to Offset AI Usage</h1>
 
-  <label for="aiMinutes">Minutes of AI use today:</label>
-  <input type="number" id="aiMinutes" value="60" min="1"> minutes
+  <label for="aiMinutes">Estimated AI minutes today:</label>
+  <input type="number" id="aiMinutes" value="60" min="1">
+  <br>
+  <label for="showerDays">Showers per week:</label>
+  <input type="number" id="showerDays" value="6" min="1" max="7">
+  <br>
+  <label for="showerRate">Showerhead type:</label>
+  <select id="showerRate">
+    <option value="12">Standard (12 L/min)</option>
+    <option value="7">Low-flow (7 L/min)</option>
+  </select>
+  <br>
+  <label for="preferredTime">Preferred shower time (minutes):</label>
+  <input type="number" id="preferredTime" value="8" min="1">
+  <br>
+  <label><input type="checkbox" id="altHygiene"> Show alternative hygiene tips if under 5 min</label>
+  <br>
+  <span class="warmup-note">🕒 Note: A 30-second water warm-up is added before your shower timer starts.</span>
+  <br>
   <button onclick="calculateOffset()">Calculate Shower Time</button>
-
   <div id="results"></div>
-
+  <div id="adjustments"></div>
   <div id="time">--:--</div>
   <button onclick="startTimer()">Start Timer</button>
   <button onclick="resetTimer()">Reset</button>
@@ -85,7 +111,6 @@
     document.getElementById('darkToggle').onclick = () => {
       document.body.classList.toggle('dark');
     };
-
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.body.classList.add('dark');
     }
@@ -93,14 +118,10 @@
     function startTimer() {
       clearInterval(timer);
       updateDisplay();
-
       timer = setInterval(() => {
         totalSeconds--;
         updateDisplay();
-
-        if (totalSeconds === 60) {
-          document.getElementById('warningSound').play();
-        }
+        if (totalSeconds === 60) document.getElementById('warningSound').play();
         if (totalSeconds <= 0) {
           clearInterval(timer);
           document.getElementById('endSound').play();
@@ -121,19 +142,41 @@
 
     function calculateOffset() {
       const aiMinutes = parseInt(document.getElementById('aiMinutes').value);
-      const litersPerMinuteAI = 0.5; // aggressive estimate
-      const waterToOffset = aiMinutes * litersPerMinuteAI;
-      const showerRate = 12; // liters/minute (regular showerhead)
-      const recommendedShowerTime = waterToOffset / showerRate;
-      const warmupBuffer = 0.5; // 30 seconds
-      const adjustedTime = recommendedShowerTime + warmupBuffer;
+      const showerDays = parseInt(document.getElementById('showerDays').value);
+      const rate = parseFloat(document.getElementById('showerRate').value);
+      const preferredTime = parseFloat(document.getElementById('preferredTime').value);
+      const altHygiene = document.getElementById('altHygiene').checked;
 
-      totalSeconds = Math.round(adjustedTime * 60);
+      const waterToOffset = aiMinutes * 0.5 * 7;
+      const preferredWeeklyUse = preferredTime * rate * showerDays;
+      const savingsPerWeek = preferredWeeklyUse - waterToOffset;
+
+      const recommendedDailyTime = Math.max((preferredWeeklyUse - waterToOffset) / (rate * showerDays), 4);
+      const recommendedWeeklyUse = recommendedDailyTime * rate * showerDays;
+      const actualOffset = preferredWeeklyUse - recommendedWeeklyUse;
+      const percentOffset = Math.min((actualOffset / waterToOffset) * 100, 100);
+
+      totalSeconds = Math.round(recommendedDailyTime * 60) + 30;
       updateDisplay();
 
-      document.getElementById('results').innerHTML = 
-        `<p><strong>Estimated AI Water Use:</strong> ${waterToOffset.toFixed(1)} liters</p>
-         <p><strong>Recommended Shower Time:</strong> aim for <strong>${adjustedTime.toFixed(1)} minutes</strong> (including 30 sec warm-up).</p>`;
+      let msg = `<p><strong>Total Weekly AI Water Use:</strong> ${waterToOffset.toFixed(1)} L</p>
+                 <p><strong>Your Preferred Shower Use:</strong> ${preferredWeeklyUse.toFixed(1)} L/week</p>
+                 <p><strong>Recommended Shower Time:</strong> ${recommendedDailyTime.toFixed(1)} minutes</p>
+                 <p><strong>Projected New Weekly Use:</strong> ${recommendedWeeklyUse.toFixed(1)} L/week</p>
+                 <p><strong>Offset Achieved:</strong> ${percentOffset.toFixed(1)}% of AI water usage offset</p>`;
+
+      if (recommendedDailyTime < 5 && altHygiene) {
+        msg += `<p><em>Tip:</em> Try rinse-only, sponge bath, or dry shampoo to stay fresh and reduce water use.</p>`;
+      }
+      document.getElementById('results').innerHTML = msg;
+
+      let adjustmentsHTML = '<h3>Want a Longer Shower?</h3>';
+      for (let altDays = showerDays - 1; altDays >= 3; altDays--) {
+        const altTime = Math.max((preferredWeeklyUse - waterToOffset) / (rate * altDays), 4);
+        const altWeekly = altTime * rate * altDays;
+        adjustmentsHTML += `<p><strong>${altDays} showers/week:</strong> ${altTime.toFixed(1)} min → ${altWeekly.toFixed(1)} L/week</p>`;
+      }
+      document.getElementById('adjustments').innerHTML = adjustmentsHTML;
     }
   </script>
 </body>
